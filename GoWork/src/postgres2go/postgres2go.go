@@ -79,8 +79,16 @@ func main() {
 
 						for _, table := range tables {
 							fmt.Printf("Table:%s --> %s\n", table.Name, snakeToCamel(table.Name))
+							fmt.Printf("\tJsonDataType ")
+							err := generateGoJsonMapping( table )
+							if err == nil {
+								fmt.Printf("Done\n")
+							} else {
+								fmt.Printf("%+v\n",err)
+							}
+
 							fmt.Printf("\tEntity ")
-							err := generateGoEntity( table )
+							err = generateGoEntity( table )
 							if err == nil {
 								fmt.Printf("Done\n")
 							} else {
@@ -125,6 +133,8 @@ func postgresToGoType(postgresType string) string {
 		return "int"
 	} else if postgresType == "bigint" {
 		return "int64"
+	} else if postgresType == "double precision" {
+		return "float64"
 	}
 	return "UNKNOW : " + postgresType
 }
@@ -136,8 +146,47 @@ func postgresToFmtType(postgresType string) string {
 		return "%d"
 	} else if postgresType == "bigint" {
 		return "%d"
+	} else if postgresType == "double precision" {
+		return "%f"
 	}
 	return "UNKNOW : " + postgresType
+}
+
+func generateGoJsonMapping(table *Table) error {
+	entityName := snakeToCamel(table.Name) + "Json"
+	entityFileName := "./outputs/" + entityName + ".go"
+	entityHandle, err := os.Create(entityFileName)
+	if err != nil {
+		return err
+	}
+	defer entityHandle.Close()
+	entityWriter := bufio.NewWriter(entityHandle) // *bufio.Writer
+	fmt.Fprintf(entityWriter, "package main\n\n")
+	//	fmt.Fprintf(entityWriter, "import (\n\t\"fmt\"\n)\n")
+	fmt.Fprintf(entityWriter, "type %s struct {\n",entityName)
+
+	maxNameWidth := 0
+	maxTypeWidth := 0
+	for _, column := range table.columns {
+		camelName := snakeToCamel(column.Name)
+		if len(camelName) > maxNameWidth {
+			maxNameWidth = len(camelName)
+		}
+		if len(column.Type) > maxTypeWidth {
+			maxTypeWidth = len(column.Type)
+		}
+	}
+	maxNameWidth = maxNameWidth + 10 
+	for _, column := range table.columns {
+		camelName := snakeToCamel(column.Name)
+		goType := postgresToGoType(column.Type)		
+		camelFirstLowName := strings.ToLower(camelName[:1]) + camelName[1:]
+		fmt.Fprintf(entityWriter, "\t%-*s\t%-*s\t`json:\"%s,omitempty\"`\n", maxNameWidth, camelName, maxTypeWidth, goType, camelFirstLowName)
+	}
+	fmt.Fprintf(entityWriter, "}\n\n")
+
+	entityWriter.Flush()
+	return nil
 }
 
 func generateGoEntity(table *Table) error {
